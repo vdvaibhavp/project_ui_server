@@ -1,7 +1,27 @@
 const express = require('express');
 const cors = require('cors');
-const app = express();
 const fs = require('fs');
+const path = require('path');
+const app = express();
+
+//logging - winston
+const winston = require("winston");
+const logger = winston.createLogger({
+
+  level: "info",
+  //standard log format
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.printf(
+      (info) => `${info.timestamp} ${info.level}: ${info.message}`
+    )
+  ),
+  // Log to the console and a file
+  transports: [
+    new winston.transports.Console(),
+    new winston.transports.File({ filename: "logs/app.log" }),
+  ],
+});
 
 const multer = require('multer');
 const upload = multer();
@@ -13,21 +33,24 @@ const unirest = require("unirest");
 
 app.get('/authenticate', (req, res) => {
   const {username, password} = req.query;
-  console.log(username, password);
+  logger.info(`Received a ${req.method} request for ${req.url}`);
   const request = unirest("POST", "https://t3.automationedge.com/aeengine/rest/authenticate")
                   .query({username, password });
                   request.end(function (response) {
                     if (response.error) {
-                        console.error(response.error);
-                        res.status(500).send('Error occurred');
+                        console.log(response.error)
+                        logger.error(`${response.error.message} from t3 instance`);
+                        res.status(401).send('Error occurred');
                       } else {
-                        res.json(response.body);
+                        logger.info(`Session Token Received from t3 instance`);
+                        res.status(200).json(response.body);
                       }
                   });
 
 });
 
 app.post('/upload', upload.array('files', 2), async (req, res) => {
+  logger.info(`Received a ${req.method} request for ${req.url} to upload a file.`)
   const { files } = req;
   const sessionToken = req.body.sessionToken;
   console.log(files, sessionToken);
@@ -72,7 +95,7 @@ app.post('/upload', upload.array('files', 2), async (req, res) => {
 
 
 app.get('/status', async (req, res) => {
-
+  logger.info(`Received a ${req.method} request for ${req.url} to check status`);
   const {sessionToken, requestId} = req.query;
   
   let status = 'pending';
@@ -81,53 +104,84 @@ app.get('/status', async (req, res) => {
   let request_id = '';
 
   // Checking Workflow status after every 3 seconds
+  let counter = 0;
 
-  while (status !== 'Complete') {
+  while (status !== 'Complete' && status !== 'Failure') {
     console.log(sessionToken, requestId);
     const request = await unirest("GET", `https://t3.automationedge.com/aeengine/rest/workflowinstances/${requestId}`)
                             .headers({ 'Content-Type': 'application/json', 'X-Session-Token': sessionToken })
                             .end(function (response) {
                               console.log(response.body);
                                 if (response.error) {
-                                  console.error(response.error);
+                                  console.log(response.error);
                                   res.status(500).send(response.error);
                                 } else {
                                     status = response.body.status;
                                     if (response.body.workflowResponse) {
                                         fileName = JSON.parse(response.body.workflowResponse).outputParameters[0].name;
                                         fileValue = JSON.parse(response.body.workflowResponse).outputParameters[0].value;
-                                        console.log(fileName);
-                                        console.log(fileValue);
                                         }
                                         request_id = response.body.id;
                                   }
+                                  if (status === 'New' && !response.body.agentName) {
+                                            counter++;
+                                            if (counter === 10) {
+                                                status = 'no_agent';
+                                                }
+                                  } else {
+                                            counter = 0;
+                                  }
+                                  
                             });
+                            if (status === 'Complete' || status === 'Failure' || status === 'no_agent') {
+                              break;
+                            }
+                            
                             await new Promise(resolve => setTimeout(resolve, 3000)); 
   };
 
+      if (status === 'Complete') {
+        res.status(200).send({ status: 'Complete ! Please Check Your Mail' });
+          } else if (status === 'Failure') {
+        res.status(200).send({ status: 'Failure ! Please Try Again (Check Input Files)' });
+        } else if (status === 'no_agent') {
+          res.status(200).send({status: 'Contact the Administrator Agent Is Under Maintainance'});
+        }
   
   
-  //output file - to download
-await unirest.get("https://t3.automationedge.com/aeengine/rest/file/download")
-             .headers({'X-Session-Token': sessionToken })
-             .query({'file_id': fileValue, 'request_id': requestId,})
-             .end(function (response) {
-              console.log("File downloaded");
-               if (response.error) {
-                  console.error(response.error);
-                  res.status(500).send('Error occurred during file download.');
-                 } else {
-                  const fileBuffer = response.body;
-                  res.setHeader('Content-disposition', 'attachment; filename=' + fileName);
-                  res.setHeader('Content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-                  res.send(fileBuffer);
-                 }
-             });
+// output file - to download
+// await unirest
+// .get("https://t3.automationedge.com/aeengine/rest/file/download")
+// .headers({ 'X-Session-Token': sessionToken })
+// .query({ 'file_id': fileValue, 'request_id': requestId })
+// .end(function (response) {
+  
+//   if (response.error) {
+//     console.error(response.error);
+//     res.status(500).send('Error occurred during file download.');
+//   } else {
+//     const fileBuffer = response.raw_body;
+//     const fileName = 'product_output.xlsx'; 
+//     const filePath = path.join(__dirname, 'downloads', fileName); 
+
+//     fs.writeFile(filePath, fileBuffer, 'binary', function (err) {
+//       if (err) {
+//         console.error(err);
+//         res.status(500).send('Error occurred while saving the file.');
+//       } else {
+//         console.log('File downloaded and saved:', fileName);
+//         res.setHeader('Content-Disposition', 'attachment; filename=' + fileName);
+//         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+//         res.sendFile(filePath);
+//       }
+//     });
+//   }
+// });
 
 });
 
 
 app.listen(port, () => {
-  console.log(`Server app listening at http://localhost:${port}`);
+  console.log(`Server app listening at http://192.168.4.131:${port}`);
 });
 
