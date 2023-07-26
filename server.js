@@ -60,15 +60,19 @@ app.get('/authenticate', (req, res) => {
 });
 
 app.post('/upload', upload.array('files', 2), async (req, res) => {
-  logger.info(`Received a ${req.method} request for ${req.url} to upload a file.`)
+  logger.info(`Received a ${req.method} request for to upload a file.`)
   const { files } = req;
   const sessionToken = req.body.sessionToken;
-  console.log(files, sessionToken);
+  const tenant_name = req.body.tenantName;
+  const tenant_orgcode = req.body.tenantOrgCode;
+  const mailId = req.body.mailId;
+
+  console.log(sessionToken, tenant_name, tenant_orgcode);
 
   // Uploading file1 to the t3 server
   const response1 = await unirest.post("https://t3.automationedge.com/aeengine/rest/file/upload")
                                  .headers({ 'Content-Type': 'multipart/form-data', 'X-Session-Token': sessionToken })
-                                 .query({'workflow_name': 'InputFileTest', 'workflow_id': '22825'})
+                                 .query({'workflow_name': 'GSTR_2B_1', 'workflow_id': '4339'})
                                  .attach('file', files[0].buffer, { filename: files[0].originalname })
   
   const fileId1 = response1.body.fileId;
@@ -76,7 +80,7 @@ app.post('/upload', upload.array('files', 2), async (req, res) => {
   //uploading file2 to the t3 server
   const response2 = await unirest.post("https://t3.automationedge.com/aeengine/rest/file/upload")
                                  .headers({ 'Content-Type': 'multipart/form-data', 'X-Session-Token': sessionToken })
-                                 .query({'workflow_name': 'InputFileTest', 'workflow_id': '22825'})
+                                 .query({'workflow_name': 'GSTR_2B_1', 'workflow_id': '4339'})
                                  .attach('file', files[1].buffer, { filename: files[1].originalname })
  
   const fileId2 = response2.body.fileId;
@@ -86,12 +90,13 @@ app.post('/upload', upload.array('files', 2), async (req, res) => {
   // Executing workflow with input files
   await unirest.post("https://t3.automationedge.com/aeengine/rest/execute")
                .headers({ 'Content-Type': 'application/json', 'X-Session-Token': sessionToken })
-               .query({'workflow_name': 'InputFileTest', 'workflow_id': '22825'})
+               .query({'workflow_name': 'GSTR_2B_1', 'workflow_id': '4339'})
                .send(
-                  {"orgCode":"VAIBHAV_PARADHI_2113","workflowName":"InputFileTest",
-                  "userId":"Vaibhav Paradhi", "source":"Rest Test","responseMailSubject":"null",
-                  "params":[{"name": "input_file", "value":fileId1, "type": "File"},
-                  {"name": "input_file1", "value":fileId2, "type": "File"}]}
+                {"orgCode": tenant_orgcode,"workflowName":"GSTR_2B_1",
+                "userId": tenant_name, "source":"Rest Test","responseMailSubject":"null",
+                "params":[{"name": "Input_File", "value":fileId1, "type": "File"},
+                {"name": "GST_File_Path", "value":fileId2, "type": "File"}, 
+                {"name": "Destination_Address", "value": mailId, "type": "String"}]}
                 )
                .end(function (response) {
                   if (response.error) {
