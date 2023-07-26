@@ -4,6 +4,16 @@ const fs = require('fs');
 const path = require('path');
 const app = express();
 
+
+// setting build 
+
+app.use(express.static(path.join(__dirname, '../project_ui/build')));
+
+app.get('/', function (req, res) {
+  res.sendFile(path.join(__dirname, '../project_ui/build', 'index.html'));
+});
+
+
 //logging - winston
 const winston = require("winston");
 const logger = winston.createLogger({
@@ -27,7 +37,7 @@ const multer = require('multer');
 const upload = multer();
 
 app.use(cors());
-const port = 3001;
+const port = 8080;
 const unirest = require("unirest");
 
 
@@ -182,6 +192,6 @@ app.get('/status', async (req, res) => {
 
 
 app.listen(port, () => {
-  console.log(`Server app listening at http://192.168.4.131:${port}`);
+  console.log(`Server app listening at http://10.41.11.10:${port}`);
 });
 
