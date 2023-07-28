@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
 const app = express();
 
 
@@ -101,10 +102,12 @@ app.post('/upload', upload.array('files', 2), async (req, res) => {
                 )
                .end(function (response) {
                   if (response.error) {
+                      logger.error(`Error in executing workflow`)
                       console.error(response.error);
                       res.status(500).send('Error occurred while executing worfkflow');
                     } else {
-                      res.json(response.body.automationRequestId);
+                      logger.info(`Automaiton request ID received ${response.body.automationRequestId}`)
+                      res.status(200).json(response.body.automationRequestId);
                     }
                 });
   });
@@ -134,8 +137,14 @@ app.get('/status', async (req, res) => {
                                 } else {
                                     status = response.body.status;
                                     if (response.body.workflowResponse) {
-                                        fileName = JSON.parse(response.body.workflowResponse).outputParameters[0].name;
-                                        fileValue = JSON.parse(response.body.workflowResponse).outputParameters[0].value;
+                                        fileName = JSON.parse(response.body.workflowResponse).outputParameters[1].name;
+                                        if (fileName == 'Output File.xlsx'){
+                                        fileValue = JSON.parse(response.body.workflowResponse).outputParameters[1].value;
+                                        }
+                                        else {
+                                          fileValue = JSON.parse(response.body.workflowResponse).outputParameters[0].value;
+                                        }
+                                        
                                         }
                                         request_id = response.body.id;
                                   }
@@ -157,45 +166,48 @@ app.get('/status', async (req, res) => {
   };
 
       if (status === 'Complete') {
-        res.status(200).send({ status: 'Complete ! Please Check Your Mail' });
+        console.log(fileValue, requestId);
+        res.status(200).send({ status: 'Complete ! Please Check Your Mail', 
+                               request_id: requestId,
+                               file_id: fileValue });
           } else if (status === 'Failure') {
         res.status(200).send({ status: 'Failure ! Please Try Again (Check Input Files)' });
         } else if (status === 'no_agent') {
           res.status(200).send({status: 'Contact the Administrator Agent Is Under Maintainance'});
         }
-  
-  
-// output file - to download
-// await unirest
-// .get("https://t3.automationedge.com/aeengine/rest/file/download")
-// .headers({ 'X-Session-Token': sessionToken })
-// .query({ 'file_id': fileValue, 'request_id': requestId })
-// .end(function (response) {
-  
-//   if (response.error) {
-//     console.error(response.error);
-//     res.status(500).send('Error occurred during file download.');
-//   } else {
-//     const fileBuffer = response.raw_body;
-//     const fileName = 'product_output.xlsx'; 
-//     const filePath = path.join(__dirname, 'downloads', fileName); 
-
-//     fs.writeFile(filePath, fileBuffer, 'binary', function (err) {
-//       if (err) {
-//         console.error(err);
-//         res.status(500).send('Error occurred while saving the file.');
-//       } else {
-//         console.log('File downloaded and saved:', fileName);
-//         res.setHeader('Content-Disposition', 'attachment; filename=' + fileName);
-//         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-//         res.sendFile(filePath);
-//       }
-//     });
-//   }
-// });
 
 });
 
+app.get('/download', async (req, res) => {
+  const {sessionToken, requestId, fileId} = req.query;
+  try {
+    // Make the API request to the external download API
+    const response = await axios({
+      method: 'GET',
+      url: 'https://t4.automationedge.com/aeengine/rest/file/download',
+      params: { file_id: fileId, request_id: requestId }, // Set the fileID as a query parameter
+      responseType: 'stream',
+      headers: {
+        'X-Session-Token': sessionToken, // Add the session token in the Authorization header
+      },
+    });
+  
+    // Get the file name from the response headers or set a default name
+    const fileName = response.headers['content-disposition']
+      ? response.headers['content-disposition'].split('filename=')[1]
+      : 'downloaded_file.xlsx'; // Replace 'downloaded_file.ext' with the desired default name
+  
+    // Set the headers for the file download
+    res.setHeader('Content-disposition', 'attachment; filename=' + fileName);
+    res.setHeader('Content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'); // Adjust the content-type based on your file type if needed
+    
+    // Stream the file to the client
+    response.data.pipe(res);
+  } catch (error) {
+    console.error('Error downloading file:', error);
+    res.status(500).send('Error downloading file');
+  }
+});
 
 app.listen(port, () => {
   console.log(`Server app listening at http://10.41.11.10:${port}`);
