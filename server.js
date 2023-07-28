@@ -44,9 +44,10 @@ const unirest = require("unirest");
 app.get('/authenticate', (req, res) => {
   const {username, password} = req.query;
   logger.info(`Received a ${req.method} request for ${req.url}`);
-  const request = unirest("POST", "https://t3.automationedge.com/aeengine/rest/authenticate")
+  const request = unirest("POST", "https://t4.automationedge.com/aeengine/rest/authenticate")
                   .query({username, password });
                   request.end(function (response) {
+                    console.log(response.body)
                     if (response.error) {
                         console.log(response.error)
                         logger.error(`${response.error.message} from t3 instance`);
@@ -70,7 +71,7 @@ app.post('/upload', upload.array('files', 2), async (req, res) => {
   console.log(sessionToken, tenant_name, tenant_orgcode);
 
   // Uploading file1 to the t3 server
-  const response1 = await unirest.post("https://t3.automationedge.com/aeengine/rest/file/upload")
+  const response1 = await unirest.post("https://t4.automationedge.com/aeengine/rest/file/upload")
                                  .headers({ 'Content-Type': 'multipart/form-data', 'X-Session-Token': sessionToken })
                                  .query({'workflow_name': 'GSTR_2B_1', 'workflow_id': '4339'})
                                  .attach('file', files[0].buffer, { filename: files[0].originalname })
@@ -78,7 +79,7 @@ app.post('/upload', upload.array('files', 2), async (req, res) => {
   const fileId1 = response1.body.fileId;
 
   //uploading file2 to the t3 server
-  const response2 = await unirest.post("https://t3.automationedge.com/aeengine/rest/file/upload")
+  const response2 = await unirest.post("https://t4.automationedge.com/aeengine/rest/file/upload")
                                  .headers({ 'Content-Type': 'multipart/form-data', 'X-Session-Token': sessionToken })
                                  .query({'workflow_name': 'GSTR_2B_1', 'workflow_id': '4339'})
                                  .attach('file', files[1].buffer, { filename: files[1].originalname })
@@ -88,7 +89,7 @@ app.post('/upload', upload.array('files', 2), async (req, res) => {
   console.log(fileId1, fileId2);
 
   // Executing workflow with input files
-  await unirest.post("https://t3.automationedge.com/aeengine/rest/execute")
+  await unirest.post("https://t4.automationedge.com/aeengine/rest/execute")
                .headers({ 'Content-Type': 'application/json', 'X-Session-Token': sessionToken })
                .query({'workflow_name': 'GSTR_2B_1', 'workflow_id': '4339'})
                .send(
@@ -123,7 +124,7 @@ app.get('/status', async (req, res) => {
 
   while (status !== 'Complete' && status !== 'Failure') {
     console.log(sessionToken, requestId);
-    const request = await unirest("GET", `https://t3.automationedge.com/aeengine/rest/workflowinstances/${requestId}`)
+    const request = await unirest("GET", `https://t4.automationedge.com/aeengine/rest/workflowinstances/${requestId}`)
                             .headers({ 'Content-Type': 'application/json', 'X-Session-Token': sessionToken })
                             .end(function (response) {
                               console.log(response.body);
