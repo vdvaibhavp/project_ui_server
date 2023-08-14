@@ -4,9 +4,39 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const app = express();
+const { Pool } = require('pg');
+const bodyParser = require('body-parser');
+
 
 //logging - winston
 const winston = require("winston");
+const pool = new Pool({
+  user: 'postgres',
+  host: 'localhost',
+  database: 'CA_Payment_Gateway',
+  password: 'root',
+  port: 5432, // Default PostgreSQL port
+});
+
+//send data to postgres
+pool.connect()
+  .then(() => console.log('Connected to PostgreSQL'))
+  .catch(err => console.error('Error connecting to PostgreSQL', err));
+
+
+// app.post('/api/insert', async (req, res) => {
+//   const { data } = req.body;
+
+//   try {
+//     const result = await pool.query('INSERT INTO demo (name) VALUES ($1) RETURNING *', [data]);
+//     res.json(result.rows[0]);
+//   } catch (error) {
+//     console.error('Error inserting data:', error);
+//     res.status(500).json({ error: 'Internal server error' });
+//   }
+// });
+
+
 const logger = winston.createLogger({
 
   level: "info",
@@ -110,7 +140,9 @@ app.get('/status', async (req, res) => {
   let fileName = '';
   let fileValue = '';
   let request_id = '';
-
+  let rowvalue='';
+  let rowname='';
+  // var row_count=0;
   // Checking Workflow status after every 3 seconds
   let counter = 0;
 
@@ -133,7 +165,19 @@ app.get('/status', async (req, res) => {
                                         else {
                                           fileValue = JSON.parse(response.body.workflowResponse).outputParameters[0].value;
                                         }
-                                        
+                                        //Row Count
+                                        if(response.body.workflowResponse)
+                                        {
+                                           rowname=JSON.parse(response.body.workflowResponse).outputParameters[1].value;
+                                           if(rowname=="value")
+                                           {
+                                            rowvalue=JSON.parse(response.body.workflowResponse).outputParameters[1].value;
+                                           }
+                                           else{
+                                              rowvalue=JSON.parse(response.body.workflowResponse).outputParameters[0].value;
+                                           }
+                                        }
+                                       
                                         }
                                         request_id = response.body.id;
                                   }
@@ -158,7 +202,8 @@ app.get('/status', async (req, res) => {
         console.log(fileValue, requestId);
         res.status(200).send({ status: 'Complete ! Please Check Your Mail', 
                                request_id: requestId,
-                               file_id: fileValue });
+                               file_id: fileValue,
+                              row_count:rowvalue });
           } else if (status === 'Failure') {
         res.status(200).send({ status: 'Failure ! Please Try Again (Check Input Files)' });
         } else if (status === 'no_agent') {
