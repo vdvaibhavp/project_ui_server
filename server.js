@@ -39,7 +39,6 @@ app.get('/authenticate', (req, res) => {
                   .query({username, password });
                   request.end(function (response) {
                     if (response.error) {
-                        console.log(response.error)
                         logger.error(`${response.error.message} from t3 instance`);
                         res.status(401).send('Error occurred');
                       } else {
@@ -58,8 +57,6 @@ app.post('/upload', upload.array('files', 2), async (req, res) => {
   const tenant_orgcode = req.body.tenantOrgCode;
   const mailId = req.body.mailId;
 
-  console.log(sessionToken, tenant_name, tenant_orgcode);
-
   // Uploading file1 to the t3 server
   const response1 = await unirest.post("https://t4.automationedge.com/aeengine/rest/file/upload")
                                  .headers({ 'Content-Type': 'multipart/form-data', 'X-Session-Token': sessionToken })
@@ -76,7 +73,7 @@ app.post('/upload', upload.array('files', 2), async (req, res) => {
  
   const fileId2 = response2.body.fileId;
 
-  console.log(fileId1, fileId2);
+
 
   // Executing workflow with input files
   await unirest.post("https://t4.automationedge.com/aeengine/rest/execute")
@@ -133,6 +130,8 @@ app.get('/status', async (req, res) => {
                                         else {
                                           fileValue = JSON.parse(response.body.workflowResponse).outputParameters[0].value;
                                         }
+                                        //code for row count
+                                        
                                         
                                         }
                                         request_id = response.body.id;
@@ -148,6 +147,7 @@ app.get('/status', async (req, res) => {
                                   
                             });
                             if (status === 'Complete' || status === 'Failure' || status === 'no_agent') {
+
                               break;
                             }
                             
@@ -155,10 +155,11 @@ app.get('/status', async (req, res) => {
   };
 
       if (status === 'Complete') {
-        console.log(fileValue, requestId);
+       
         res.status(200).send({ status: 'Complete ! Please Check Your Mail', 
                                request_id: requestId,
-                               file_id: fileValue });
+                               file_id: fileValue,
+                               row_count: 133 });
           } else if (status === 'Failure') {
         res.status(200).send({ status: 'Failure ! Please Try Again (Check Input Files)' });
         } else if (status === 'no_agent') {
