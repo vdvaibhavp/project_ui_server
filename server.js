@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const app = express();
+app.use(express.json());
 
 //logging - winston
 const winston = require("winston");
@@ -198,6 +199,42 @@ app.get('/download', async (req, res) => {
     res.status(500).send('Error downloading file');
   }
 });
+
+// This is code for get the data from registrationpage into csv file and file is store in our local directory...
+
+
+
+
+const csvFilePath = path.join(
+  'D:', 'Old_Laptop_Data', 'AE', 'Process_Studio', 'Demo2_Workspace', 'user_data.csv'
+);
+
+app.post('/api/addUser', (req, res) => {
+  const userData = req.body;
+  const csvData = `${userData.firstName},${userData.lastName},${userData.email},${userData.username}\n`;
+
+  try {
+    // Check if the CSV file exists, and if not, re-create it
+    if (!fs.existsSync(csvFilePath)) {
+      fs.writeFileSync(csvFilePath, 'firstname, lastname, email, username\n', 'utf-8');
+    }
+
+    const existingData = fs.readFileSync(csvFilePath, 'utf-8');
+    const existingUsernames = existingData.split('\n').slice(1).map(line => line.split(',')[3]);
+
+    if (existingUsernames.includes(userData.username)) {
+      return res.status(400).json({ error: 'Username already exists' });
+    }
+
+    fs.appendFileSync(csvFilePath, csvData, 'utf-8');
+    console.log('User data appended to CSV file:', userData);
+    res.status(200).json({ message: 'User data added successfully' });
+  } catch (error) {
+    console.error('Error appending user data to CSV file:', error);
+    res.status(500).json({ error: 'Failed to add user data' });
+  }
+});
+
 
 app.listen(port, () => {
   console.log(`Server app listening at http://192.168.4.131:${port}`);
