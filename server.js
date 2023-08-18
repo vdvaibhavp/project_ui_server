@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const app = express();
+
 const { Pool } = require('pg');
 const bodyParser = require('body-parser');
 
@@ -16,6 +17,9 @@ const pool = new Pool({
   password: 'root',
   port: 5432, // Default PostgreSQL port
 });
+
+app.use(express.json());
+
 
 //logging - winston
 const winston = require("winston");
@@ -53,7 +57,6 @@ app.get('/authenticate', (req, res) => {
                   .query({username, password });
                   request.end(function (response) {
                     if (response.error) {
-                        console.log(response.error)
                         logger.error(`${response.error.message} from t3 instance`);
                         res.status(401).send('Error occurred');
                       } else {
@@ -76,8 +79,6 @@ app.post('/upload', upload.array('files', 2), async (req, res) => {
   const tenant_orgcode = req.body.tenantOrgCode;
   const mailId = req.body.mailId;
 
-  console.log(sessionToken, tenant_name, tenant_orgcode);
-
   // Uploading file1 to the t3 server
   const response1 = await unirest.post("https://t4.automationedge.com/aeengine/rest/file/upload")
                                  .headers({ 'Content-Type': 'multipart/form-data', 'X-Session-Token': sessionToken })
@@ -94,7 +95,7 @@ app.post('/upload', upload.array('files', 2), async (req, res) => {
  
   const fileId2 = response2.body.fileId;
 
-  console.log(fileId1, fileId2);
+
 
   // Executing workflow with input files
   await unirest.post("https://t4.automationedge.com/aeengine/rest/execute")
@@ -155,6 +156,7 @@ app.get('/status', async (req, res) => {
                                         else {
                                           fileValue = JSON.parse(response.body.workflowResponse).outputParameters[0].value;
                                         }
+
                                         //Row Count
                                         if(response.body.workflowResponse)
                                         {
@@ -209,6 +211,7 @@ app.get('/status', async (req, res) => {
                                                 }
                                               }
                                         });
+
                                         }
                                         request_id = response.body.id;
                                   }
@@ -223,6 +226,7 @@ app.get('/status', async (req, res) => {
                                   
                             });
                             if (status === 'Complete' || status === 'Failure' || status === 'no_agent') {
+
                               break;
                             }
                             
@@ -230,12 +234,14 @@ app.get('/status', async (req, res) => {
   };
 
       if (status === 'Complete') {
-        console.log(fileValue, requestId);
+       
         res.status(200).send({ status: 'Complete ! Please Check Your Mail', 
                                request_id: requestId,
                                file_id: fileValue,
+
                               row_count:rowvalue,
                              total_credit:total_creditremaining});
+
           } else if (status === 'Failure') {
         res.status(200).send({ status: 'Failure ! Please Try Again (Check Input Files)' });
         } else if (status === 'no_agent') {
@@ -272,6 +278,42 @@ app.get('/download', async (req, res) => {
   } catch (error) {
     console.error('Error downloading file:', error);
     res.status(500).send('Error downloading file');
+  }
+});
+
+
+// This is code for get the data from registrationpage into csv file and file is store in our local directory...
+
+
+
+
+const csvFilePath = path.join(
+  'D:', 'Old_Laptop_Data', 'AE', 'Process_Studio', 'Demo2_Workspace', 'user_data.csv'
+);
+
+app.post('/api/addUser', (req, res) => {
+  const userData = req.body;
+  const csvData = `${userData.firstName},${userData.lastName},${userData.email},${userData.username}\n`;
+
+  try {
+    // Check if the CSV file exists, and if not, re-create it
+    if (!fs.existsSync(csvFilePath)) {
+      fs.writeFileSync(csvFilePath, 'firstname, lastname, email, username\n', 'utf-8');
+    }
+
+    const existingData = fs.readFileSync(csvFilePath, 'utf-8');
+    const existingUsernames = existingData.split('\n').slice(1).map(line => line.split(',')[3]);
+
+    if (existingUsernames.includes(userData.username)) {
+      return res.status(400).json({ error: 'Username already exists' });
+    }
+
+    fs.appendFileSync(csvFilePath, csvData, 'utf-8');
+    console.log('User data appended to CSV file:', userData);
+    res.status(200).json({ message: 'User data added successfully' });
+  } catch (error) {
+    console.error('Error appending user data to CSV file:', error);
+    res.status(500).json({ error: 'Failed to add user data' });
   }
 });
 
