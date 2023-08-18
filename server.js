@@ -4,7 +4,22 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const app = express();
+
+const { Pool } = require('pg');
+const bodyParser = require('body-parser');
+
+
+// Data base connection
+const pool = new Pool({
+  user: 'postgres',
+  host: 'localhost',
+  database: 'Recon_CA',
+  password: 'root',
+  port: 5432, // Default PostgreSQL port
+});
+
 app.use(express.json());
+
 
 //logging - winston
 const winston = require("winston");
@@ -33,8 +48,10 @@ const port = 3001;
 const unirest = require("unirest");
 
 
+var name;
 app.get('/authenticate', (req, res) => {
   const {username, password} = req.query;
+   name=username;  
   logger.info(`Received a ${req.method} request for ${req.url}`);
   const request = unirest("POST", "https://t4.automationedge.com/aeengine/rest/authenticate")
                   .query({username, password });
@@ -47,8 +64,12 @@ app.get('/authenticate', (req, res) => {
                         res.status(200).json(response.body);
                       }
                   });
-
+                  console.log(username, "this")
+                  
 });
+
+
+
 
 app.post('/upload', upload.array('files', 2), async (req, res) => {
   logger.info(`Received a ${req.method} request for to upload a file.`)
@@ -99,7 +120,7 @@ app.post('/upload', upload.array('files', 2), async (req, res) => {
                 });
   });
 
-
+  
 app.get('/status', async (req, res) => {
   logger.info(`Received a ${req.method} request for ${req.url} to check status`);
   const {sessionToken, requestId} = req.query;
@@ -108,10 +129,14 @@ app.get('/status', async (req, res) => {
   let fileName = '';
   let fileValue = '';
   let request_id = '';
-
+  let rowvalue='';
+  let rowname='';
+  let remaining_creditvalue;
+  let total_creditremaining;
+  // var row_count=0;
   // Checking Workflow status after every 3 seconds
   let counter = 0;
-
+   
   while (status !== 'Complete' && status !== 'Failure') {
     console.log(sessionToken, requestId);
     const request = await unirest("GET", `https://t4.automationedge.com/aeengine/rest/workflowinstances/${requestId}`)
@@ -131,9 +156,62 @@ app.get('/status', async (req, res) => {
                                         else {
                                           fileValue = JSON.parse(response.body.workflowResponse).outputParameters[0].value;
                                         }
-                                        //code for row count
-                                        
-                                        
+
+                                        //Row Count
+                                        if(response.body.workflowResponse)
+                                        {
+                                           rowname=JSON.parse(response.body.workflowResponse).outputParameters[1].value;
+                                           if(rowname=="value")
+                                           {
+                                            rowvalue=JSON.parse(response.body.workflowResponse).outputParameters[1].value;
+                                           }
+                                           else{
+                                              rowvalue=JSON.parse(response.body.workflowResponse).outputParameters[0].value;
+                                           }
+                                        }
+                                        //check username is present in db or not if present then add row count
+                                        var t4username=name;
+                                        //fetch data from database
+                                        pool.query('select rowcount,username,remcredit from users',(err,result)=>{
+                                          if (!err) {
+                                            const rows = result.rows;
+                                            console.log(rows)
+                                            if (rows.length > 0) {
+                                                let matchedRow;
+                                                for (const row of rows) {
+                                                    if (row.username == t4username) {
+                                                        matchedRow=row;
+                                                        //break;
+                                                    }
+                                                  }
+                                                  if(matchedRow)
+                                                  {
+                                                    rowcountValue = matchedRow.rowcount;
+                                                    remaining_creditvalue=matchedRow.remcredit;
+
+                                                    console.log('database row count:', rowcountValue);
+                                                   console.log('database remaining credit:',remaining_creditvalue);
+
+                                                     myrow_count=parseFloat(rowvalue*0.5)+parseFloat(rowcountValue); 
+                                                     total_creditremaining=parseFloat(remaining_creditvalue)-parseFloat(rowvalue*0.5);
+                                                    
+                                                    
+                                                    pool.query('UPDATE users SET rowcount = $1, remcredit = $2 WHERE username = $3',[myrow_count,total_creditremaining,t4username],(err,res)=>{
+                                                      if(!err){
+                                                       console.log("insert row count Successfully")
+                                                      }else{
+                                                       console.log("Error while inserting row count");
+                                                      }
+                                                     })
+
+                                                  }
+                                                   else {
+                                                    console.log("Username Not Found In Database")
+                                                   }
+                                                }
+                                              }
+                                        });
+
                                         }
                                         request_id = response.body.id;
                                   }
@@ -160,7 +238,10 @@ app.get('/status', async (req, res) => {
         res.status(200).send({ status: 'Complete ! Please Check Your Mail', 
                                request_id: requestId,
                                file_id: fileValue,
-                               row_count: 133 });
+
+                              row_count:rowvalue,
+                             total_credit:total_creditremaining});
+
           } else if (status === 'Failure') {
         res.status(200).send({ status: 'Failure ! Please Try Again (Check Input Files)' });
         } else if (status === 'no_agent') {
@@ -200,6 +281,7 @@ app.get('/download', async (req, res) => {
   }
 });
 
+
 // This is code for get the data from registrationpage into csv file and file is store in our local directory...
 
 
@@ -234,6 +316,7 @@ app.post('/api/addUser', (req, res) => {
     res.status(500).json({ error: 'Failed to add user data' });
   }
 });
+
 
 
 app.listen(port, () => {
