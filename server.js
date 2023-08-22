@@ -14,6 +14,21 @@ app.get('/', function (req, res) {
   res.sendFile(path.join(__dirname, '../project_ui/build', 'index.html'));
 });
 
+const { Pool } = require('pg');
+const bodyParser = require('body-parser');
+
+
+// Data base connection
+const pool = new Pool({
+  user: 'postgres',
+  host: 'localhost',
+  database: 'Recon_CA',
+  password: 'root',
+  port: 5432, // Default PostgreSQL port
+});
+
+app.use(express.json());
+
 
 //logging - winston
 const winston = require("winston");
@@ -42,15 +57,16 @@ const port = 8080;
 const unirest = require("unirest");
 
 
+var name;
 app.get('/authenticate', (req, res) => {
   const {username, password} = req.query;
+   name=username;  
   logger.info(`Received a ${req.method} request for ${req.url}`);
   const request = unirest("POST", "https://t4.automationedge.com/aeengine/rest/authenticate")
                   .query({username, password });
                   request.end(function (response) {
                     console.log(response.body)
                     if (response.error) {
-                        console.log(response.error)
                         logger.error(`${response.error.message} from t3 instance`);
                         res.status(401).send('Error occurred');
                       } else {
@@ -58,8 +74,12 @@ app.get('/authenticate', (req, res) => {
                         res.status(200).json(response.body);
                       }
                   });
-
+                  console.log(username, "this")
+                  
 });
+
+
+
 
 app.post('/upload', upload.array('files', 2), async (req, res) => {
   logger.info(`Received a ${req.method} request for to upload a file.`)
@@ -68,8 +88,6 @@ app.post('/upload', upload.array('files', 2), async (req, res) => {
   const tenant_name = req.body.tenantName;
   const tenant_orgcode = req.body.tenantOrgCode;
   const mailId = req.body.mailId;
-
-  console.log(sessionToken, tenant_name, tenant_orgcode);
 
   // Uploading file1 to the t3 server
   const response1 = await unirest.post("https://t4.automationedge.com/aeengine/rest/file/upload")
@@ -87,7 +105,7 @@ app.post('/upload', upload.array('files', 2), async (req, res) => {
  
   const fileId2 = response2.body.fileId;
 
-  console.log(fileId1, fileId2);
+
 
   // Executing workflow with input files
   await unirest.post("https://t4.automationedge.com/aeengine/rest/execute")
@@ -112,7 +130,7 @@ app.post('/upload', upload.array('files', 2), async (req, res) => {
                 });
   });
 
-
+  
 app.get('/status', async (req, res) => {
   logger.info(`Received a ${req.method} request for ${req.url} to check status`);
   const {sessionToken, requestId} = req.query;
@@ -121,10 +139,14 @@ app.get('/status', async (req, res) => {
   let fileName = '';
   let fileValue = '';
   let request_id = '';
-
+  let rowvalue='';
+  let rowname='';
+  let remaining_creditvalue;
+  let total_creditremaining;
+  // var row_count=0;
   // Checking Workflow status after every 3 seconds
   let counter = 0;
-
+   
   while (status !== 'Complete' && status !== 'Failure') {
     console.log(sessionToken, requestId);
     const request = await unirest("GET", `https://t4.automationedge.com/aeengine/rest/workflowinstances/${requestId}`)
@@ -144,7 +166,62 @@ app.get('/status', async (req, res) => {
                                         else {
                                           fileValue = JSON.parse(response.body.workflowResponse).outputParameters[0].value;
                                         }
-                                        
+
+                                        //Row Count
+                                        if(response.body.workflowResponse)
+                                        {
+                                           rowname=JSON.parse(response.body.workflowResponse).outputParameters[1].value;
+                                           if(rowname=="value")
+                                           {
+                                            rowvalue=JSON.parse(response.body.workflowResponse).outputParameters[1].value;
+                                           }
+                                           else{
+                                              rowvalue=JSON.parse(response.body.workflowResponse).outputParameters[0].value;
+                                           }
+                                        }
+                                        //check username is present in db or not if present then add row count
+                                        var t4username=name;
+                                        //fetch data from database
+                                        pool.query('select rowcount,username,remcredit from users',(err,result)=>{
+                                          if (!err) {
+                                            const rows = result.rows;
+                                            console.log(rows)
+                                            if (rows.length > 0) {
+                                                let matchedRow;
+                                                for (const row of rows) {
+                                                    if (row.username == t4username) {
+                                                        matchedRow=row;
+                                                        //break;
+                                                    }
+                                                  }
+                                                  if(matchedRow)
+                                                  {
+                                                    rowcountValue = matchedRow.rowcount;
+                                                    remaining_creditvalue=matchedRow.remcredit;
+
+                                                    console.log('database row count:', rowcountValue);
+                                                   console.log('database remaining credit:',remaining_creditvalue);
+
+                                                     myrow_count=parseFloat(rowvalue*0.5)+parseFloat(rowcountValue); 
+                                                     total_creditremaining=parseFloat(remaining_creditvalue)-parseFloat(rowvalue*0.5);
+                                                    
+                                                    
+                                                    pool.query('UPDATE users SET rowcount = $1, remcredit = $2 WHERE username = $3',[myrow_count,total_creditremaining,t4username],(err,res)=>{
+                                                      if(!err){
+                                                       console.log("insert row count Successfully")
+                                                      }else{
+                                                       console.log("Error while inserting row count");
+                                                      }
+                                                     })
+
+                                                  }
+                                                   else {
+                                                    console.log("Username Not Found In Database")
+                                                   }
+                                                }
+                                              }
+                                        });
+
                                         }
                                         request_id = response.body.id;
                                   }
@@ -159,6 +236,7 @@ app.get('/status', async (req, res) => {
                                   
                             });
                             if (status === 'Complete' || status === 'Failure' || status === 'no_agent') {
+
                               break;
                             }
                             
@@ -166,10 +244,14 @@ app.get('/status', async (req, res) => {
   };
 
       if (status === 'Complete') {
-        console.log(fileValue, requestId);
+       
         res.status(200).send({ status: 'Complete ! Please Check Your Mail', 
                                request_id: requestId,
-                               file_id: fileValue });
+                               file_id: fileValue,
+
+                              row_count:rowvalue,
+                             total_credit:total_creditremaining});
+
           } else if (status === 'Failure') {
         res.status(200).send({ status: 'Failure ! Please Try Again (Check Input Files)' });
         } else if (status === 'no_agent') {
@@ -208,6 +290,44 @@ app.get('/download', async (req, res) => {
     res.status(500).send('Error downloading file');
   }
 });
+
+
+// This is code for get the data from registrationpage into csv file and file is store in our local directory...
+
+
+
+
+const csvFilePath = path.join(
+  'D:', 'Old_Laptop_Data', 'AE', 'Process_Studio', 'Demo2_Workspace', 'user_data.csv'
+);
+
+app.post('/api/addUser', (req, res) => {
+  const userData = req.body;
+  const csvData = `${userData.firstName},${userData.lastName},${userData.email},${userData.username}\n`;
+
+  try {
+    // Check if the CSV file exists, and if not, re-create it
+    if (!fs.existsSync(csvFilePath)) {
+      fs.writeFileSync(csvFilePath, 'firstname, lastname, email, username\n', 'utf-8');
+    }
+
+    const existingData = fs.readFileSync(csvFilePath, 'utf-8');
+    const existingUsernames = existingData.split('\n').slice(1).map(line => line.split(',')[3]);
+
+    if (existingUsernames.includes(userData.username)) {
+      return res.status(400).json({ error: 'Username already exists' });
+    }
+
+    fs.appendFileSync(csvFilePath, csvData, 'utf-8');
+    console.log('User data appended to CSV file:', userData);
+    res.status(200).json({ message: 'User data added successfully' });
+  } catch (error) {
+    console.error('Error appending user data to CSV file:', error);
+    res.status(500).json({ error: 'Failed to add user data' });
+  }
+});
+
+
 
 app.listen(port, () => {
   console.log(`Server app listening at http://10.41.11.10:${port}`);
