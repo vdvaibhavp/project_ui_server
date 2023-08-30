@@ -84,6 +84,7 @@ app.get('/authenticate', (req, res) => {
 app.post('/upload', upload.array('files', 2), async (req, res) => {
   logger.info(`Received a ${req.method} request for to upload a file.`)
   const { files } = req;
+
   const sessionToken = req.body.sessionToken;
   const tenant_name = req.body.tenantName;
   const tenant_orgcode = req.body.tenantOrgCode;
@@ -202,8 +203,8 @@ app.get('/status', async (req, res) => {
                                                     console.log('database row count:', rowcountValue);
                                                    console.log('database remaining credit:',remaining_creditvalue);
 
-                                                     myrow_count=parseFloat(rowvalue*0.5)+parseFloat(rowcountValue); 
-                                                     total_creditremaining=parseFloat(remaining_creditvalue)-parseFloat(rowvalue*0.5);
+                                                     myrow_count=parseInt(rowvalue)+parseInt(rowcountValue); 
+                                                     total_creditremaining=parseInt(remaining_creditvalue)-parseInt(rowvalue);
                                                     
                                                     
                                                     pool.query('UPDATE users SET rowcount = $1, remcredit = $2 WHERE username = $3',[myrow_count,total_creditremaining,t4username],(err,res)=>{
@@ -248,7 +249,6 @@ app.get('/status', async (req, res) => {
         res.status(200).send({ status: 'Complete ! Please Check Your Mail', 
                                request_id: requestId,
                                file_id: fileValue,
-
                               row_count:rowvalue,
                              total_credit:total_creditremaining});
 
@@ -298,7 +298,7 @@ app.get('/download', async (req, res) => {
 
 
 const csvFilePath = path.join(
-  'D:', 'Old_Laptop_Data', 'AE', 'Process_Studio', 'Demo2_Workspace', 'user_data.csv'
+  'C:', 'Setup', 'AE', 'Process-Studio', 'ps-workspace', 'Bulk_User_Creation','user_data.csv'
 );
 
 app.post('/api/addUser', (req, res) => {
