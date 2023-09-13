@@ -7,6 +7,8 @@ const app = express();
 const { Pool } = require("pg");
 const bodyParser = require("body-parser");
 
+const JSZip = require('jszip');
+
 // Data base connection
 const pool = new Pool({
   user: "postgres",
@@ -59,7 +61,7 @@ app.get("/authenticate", (req, res) => {
       res.status(401).send("Error occurred");
     } else {
       pool.query(
-        "select registerid from register where username=$1",
+        "select registerid from userregistration where username=$1",
         [username],
         (error, result) => {
           if (!error) {
@@ -83,9 +85,67 @@ app.get("/authenticate", (req, res) => {
   console.log(username, "this");
 });
 
-app.post("/upload", upload.array("files", 2), async (req, res) => {
-  logger.info(`Received a ${req.method} request for to upload a file.`);
+app.get('/api/download-sample-file', async (req, res) => {
+  const zip = new JSZip();
+
+  // Add files to the zip archive
+  zip.file('Purchase_Templates.xlsx', fs.readFileSync('./Purchase_Templates.xlsx'));
+  zip.file('GST_Template.xlsx', fs.readFileSync('./GST_Template.xlsx'));
+
+  // Generate the zip file as a buffer
+  const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
+
+  // Send the zip archive as a download
+  res.setHeader('Content-Disposition', 'attachment; filename=sample_files.zip');
+  res.setHeader('Content-Type', 'application/zip');
+  res.send(zipBuffer);
+});
+
+const targetDirectory = path.join('D:', 'Old_Laptop_Data', 'ReactJSUI', 'Filesave');
+ // Update this path to your desired folder
+
+
+ app.post('/upload', upload.array('files', 2), async (req, res) => {
+  logger.info(`Received a ${req.method} request to upload files.`)
   const { files } = req;
+  const username = name; // Assuming you have the username available
+  const registerid = req.body.registerid;
+
+  try {
+    files.forEach((file, index) => {
+      const originalFileName = file.originalname;
+      const currentDate = new Date().toISOString().split('T')[0]; // Extract the date part
+      const currentDateTime = new Date().toISOString().replace(/:/g, '-').replace(/\..+/, ''); // Format date and time
+      const newFileName = `${originalFileName}_${currentDateTime}${path.extname(originalFileName)}`; // Append date and time to the file name
+      const savePath = path.join(targetDirectory, newFileName);
+
+      // Use fs.writeFileSync to save the file to the target location
+      fs.writeFileSync(savePath, file.buffer);
+
+      logger.info(`File ${originalFileName} saved to ${savePath}`);
+
+      // Database Insertion
+      const filePath = savePath; // Store the file path
+      console.log("file name",filePath);
+
+      pool.query('INSERT INTO userfiles (registerid, username, filepath, filename, date) VALUES ($1, $2, $3, $4, $5)', [registerid, username, filePath, newFileName, currentDate], (error, result) => {
+        if (error) {
+          logger.error('Error inserting file into the database:', error);
+          
+        } else {
+          logger.info(`File ${originalFileName} inserted into the database for user ${username} with registerid ${registerid} and path ${filePath} and the date with ${currentDate}`);
+          // Handle successful database insertion here
+          
+        }
+      });
+    });
+
+    
+  } catch (error) {
+    logger.error('Error saving uploaded files:', error);
+    //res.status(500).send('Error saving uploaded files.');
+  }
+
 
   const sessionToken = req.body.sessionToken;
   const tenant_name = req.body.tenantName;
