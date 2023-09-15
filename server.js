@@ -61,22 +61,40 @@ app.get("/authenticate", (req, res) => {
       res.status(401).send("Error occurred");
     } else {
       pool.query(
-        "select registerid from userregistration where username=$1",
+        "SELECT registerid FROM userregistration WHERE username=$1",
         [username],
         (error, result) => {
           if (!error) {
             console.log("result", result);
-            registerid = result.rows[0].registerid;
+            const registerid = result.rows[0].registerid;
             console.log(registerid);
-
-            response.body.registerid = registerid;
-            console.log(
-              "My response body after adding register id: ",
-              response.body
+      
+            // Now, query the "users" table to get the remcredit
+            pool.query(
+              "SELECT remcredit FROM users WHERE registerid=$1",
+              [registerid],
+              (error, userResult) => {
+                if (!error) {
+                  const remcredit = userResult.rows[0].remcredit;
+                  console.log("remcredit", remcredit);
+      
+                  // Add both registerid and remcredit to the response.body
+                  response.body.registerid = registerid;
+                  response.body.remcredit = remcredit;
+      
+                  console.log(
+                    "My response body after adding registerid and remcredit: ",
+                    response.body
+                  );
+      
+                  console.log("My Reg ID: ", response.body.registerid);
+                  logger.info(`Session Token Received from t3 instance`);
+      
+                  // Send the response with both registerid and remcredit
+                  res.status(200).json(response.body);
+                }
+              }
             );
-            console.log("My Reg ID: ", response.body.registerid);
-            logger.info(`Session Token Received from t3 instance`);
-            res.status(200).json(response.body);
           }
         }
       );
